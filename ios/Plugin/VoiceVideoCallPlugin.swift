@@ -2,29 +2,17 @@ import Foundation
 import Capacitor
 import WebRTC
 import OneSignal
+import ReplayKit
 
 @objc(VoiceVideoCallPlugin)
 public class VoiceVideoCallPlugin: CAPPlugin {
-    private var peerConnectionFactory: RTCPeerConnectionFactory?
-    private var peerConnection: RTCPeerConnection?
-    private var mediaStream: RTCMediaStream?
-    private var localVideoTrack: RTCVideoTrack?
-    private var localAudioTrack: RTCAudioTrack?
+    private var callManager: CallManager?
     
     override public func load() {
-        // Initialize WebRTC
-        RTCInitializeSSL()
-        let videoEncoderFactory = RTCDefaultVideoEncoderFactory()
-        let videoDecoderFactory = RTCDefaultVideoDecoderFactory()
-        peerConnectionFactory = RTCPeerConnectionFactory(
-            encoderFactory: videoEncoderFactory,
-            decoderFactory: videoDecoderFactory
-        )
-        
-        // Initialize OneSignal
-        OneSignal.setLogLevel(.LL_VERBOSE, visualLevel: .LL_NONE)
+        callManager = CallManager(plugin: self)
     }
     
+    // MARK: - Original Methods
     @objc func startCall(_ call: CAPPluginCall) {
         guard let roomId = call.getString("roomId"),
               let callType = call.getString("callType") else {
@@ -32,113 +20,11 @@ public class VoiceVideoCallPlugin: CAPPlugin {
             return
         }
         
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                call.reject("Plugin instance is not available")
-                return
-            }
-            
-            do {
-                // Configure peer connection
-                let config = RTCConfiguration()
-                config.iceServers = []
-                
-                // Media constraints
-                let constraints = RTCMediaConstraints(
-                    mandatoryConstraints: [
-                        "OfferToReceiveAudio": "true",
-                        "OfferToReceiveVideo": callType == "video" ? "true" : "false"
-                    ],
-                    optionalConstraints: nil
-                )
-                
-                // Create peer connection
-                self.peerConnection = self.peerConnectionFactory?.peerConnection(
-                    with: config,
-                    constraints: constraints,
-                    delegate: self
-                )
-                
-                // Create media stream
-                guard let mediaStream = self.peerConnectionFactory?.mediaStream(withStreamId: "ARDAMS") else {
-                    call.reject("Failed to create media stream")
-                    return
-                }
-                self.mediaStream = mediaStream
-                
-                // Add audio track
-                let audioConstraints = RTCMediaConstraints(
-                    mandatoryConstraints: nil,
-                    optionalConstraints: nil
-                )
-                guard let audioSource = self.peerConnectionFactory?.audioSource(with: audioConstraints),
-                      let audioTrack = self.peerConnectionFactory?.audioTrack(
-                        with: audioSource,
-                        trackId: "ARDAMSa0"
-                      ) else {
-                    call.reject("Failed to create audio track")
-                    return
-                }
-                self.localAudioTrack = audioTrack
-                mediaStream.addAudioTrack(audioTrack)
-                
-                // Add video track if video call
-                if callType == "video" {
-                    guard let videoSource = self.peerConnectionFactory?.videoSource(),
-                          let videoTrack = self.peerConnectionFactory?.videoTrack(
-                            with: videoSource,
-                            trackId: "ARDAMSv0"
-                          ) else {
-                        call.reject("Failed to create video track")
-                        return
-                    }
-                    self.localVideoTrack = videoTrack
-                    mediaStream.addVideoTrack(videoTrack)
-                }
-                
-                // Add stream to peer connection
-                self.peerConnection?.add(mediaStream)
-                
-                // Create offer
-                self.peerConnection?.offer(for: constraints) { [weak self] (sessionDescription, error) in
-                    guard let self = self else { return }
-                    
-                    if let error = error {
-                        call.reject("Failed to create offer: \(error.localizedDescription)")
-                        return
-                    }
-                    
-                    guard let sessionDescription = sessionDescription else {
-                        call.reject("Failed to create session description")
-                        return
-                    }
-                    
-                    self.peerConnection?.setLocalDescription(sessionDescription) { error in
-                        if let error = error {
-                            call.reject("Failed to set local description: \(error.localizedDescription)")
-                            return
-                        }
-                        
-                        // Send offer through OneSignal
-                        let offerData: [String: Any] = [
-                            "type": "offer",
-                            "sdp": sessionDescription.sdp
-                        ]
-                        
-                        OneSignal.postNotification(
-                            ["contents": offerData],
-                            toUserId: roomId,
-                            onSuccess: { _ in
-                                call.resolve()
-                            },
-                            onFailure: { error in
-                                call.reject("Failed to send offer: \(error)")
-                            }
-                        )
-                    }
-                }
-            } catch {
-                call.reject("Failed to start call: \(error.localizedDescription)")
+        callManager?.startCall(roomId: roomId, callType: callType) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
             }
         }
     }
@@ -149,8 +35,13 @@ public class VoiceVideoCallPlugin: CAPPlugin {
             return
         }
         
-        // Implementation similar to startCall but handles incoming call
-        call.resolve()
+        callManager?.acceptCall(roomId: roomId) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
     }
     
     @objc func rejectCall(_ call: CAPPluginCall) {
@@ -159,86 +50,302 @@ public class VoiceVideoCallPlugin: CAPPlugin {
             return
         }
         
-        // Send rejection notification through OneSignal
-        let rejectData: [String: Any] = [
-            "type": "reject"
-        ]
-        
-        OneSignal.postNotification(
-            ["contents": rejectData],
-            toUserId: roomId,
-            onSuccess: { _ in
+        callManager?.rejectCall(roomId: roomId) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
                 call.resolve()
-            },
-            onFailure: { error in
-                call.reject("Failed to send rejection: \(error)")
             }
-        )
+        }
     }
     
     @objc func endCall(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                call.reject("Plugin instance is not available")
-                return
+        callManager?.endCall { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
             }
-            
-            self.peerConnection?.close()
-            self.peerConnection = nil
-            
-            self.mediaStream = nil
-            self.localVideoTrack = nil
-            self.localAudioTrack = nil
-            
-            call.resolve()
         }
     }
-}
-
-// MARK: - RTCPeerConnectionDelegate
-extension VoiceVideoCallPlugin: RTCPeerConnectionDelegate {
-    public func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
-        print("Signaling state changed: \(stateChanged)")
-    }
     
-    public func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
-        print("Stream added")
-    }
-    
-    public func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
-        print("Stream removed")
-    }
-    
-    public func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
-        print("Should negotiate")
-    }
-    
-    public func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        print("ICE connection state changed: \(newState)")
-    }
-    
-    public func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-        print("ICE gathering state changed: \(newState)")
-    }
-    
-    public func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        // Send ice candidate through OneSignal
-        let candidateData: [String: Any] = [
-            "type": "candidate",
-            "candidate": candidate.sdp,
-            "sdpMLineIndex": candidate.sdpMLineIndex,
-            "sdpMid": candidate.sdpMid ?? ""
-        ]
+    // MARK: - Screen Sharing Methods
+    @objc func startScreenShare(_ call: CAPPluginCall) {
+        let withAudio = call.getBool("audio") ?? false
         
-        // Note: You'll need to implement the actual sending logic here
-        print("Ice candidate generated: \(candidateData)")
+        callManager?.startScreenShare(withAudio: withAudio) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
     }
     
-    public func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
-        print("Ice candidates removed")
+    @objc func stopScreenShare(_ call: CAPPluginCall) {
+        callManager?.stopScreenShare { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
     }
     
-    public func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
-        print("Data channel opened")
+    // MARK: - Recording Methods
+    @objc func startRecording(_ call: CAPPluginCall) {
+        guard let type = call.getString("type") else {
+            call.reject("Recording type is required")
+            return
+        }
+        
+        let quality = call.getString("quality") ?? "medium"
+        let storage = call.getString("storage") ?? "local"
+        
+        callManager?.startRecording(type: type, quality: quality, storage: storage) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func stopRecording(_ call: CAPPluginCall) {
+        callManager?.stopRecording { result in
+            switch result {
+            case .success(let path):
+                call.resolve(["path": path])
+            case .failure(let error):
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
+    
+    // MARK: - Media Control Methods
+    @objc func muteAudio(_ call: CAPPluginCall) {
+        callManager?.muteAudio { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func unmuteAudio(_ call: CAPPluginCall) {
+        callManager?.unmuteAudio { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func muteVideo(_ call: CAPPluginCall) {
+        callManager?.muteVideo { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func unmuteVideo(_ call: CAPPluginCall) {
+        callManager?.unmuteVideo { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func switchCamera(_ call: CAPPluginCall) {
+        callManager?.switchCamera { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    // MARK: - Multi-Party Call Methods
+    @objc func addParticipant(_ call: CAPPluginCall) {
+        guard let participantId = call.getString("participantId") else {
+            call.reject("Participant ID is required")
+            return
+        }
+        
+        callManager?.addParticipant(participantId: participantId) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func removeParticipant(_ call: CAPPluginCall) {
+        guard let participantId = call.getString("participantId") else {
+            call.reject("Participant ID is required")
+            return
+        }
+        
+        callManager?.removeParticipant(participantId: participantId) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func getParticipants(_ call: CAPPluginCall) {
+        callManager?.getParticipants { result in
+            switch result {
+            case .success(let participants):
+                call.resolve(["participants": participants])
+            case .failure(let error):
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
+    
+    // MARK: - Network Methods
+    @objc func setNetworkConfig(_ call: CAPPluginCall) {
+        guard let config = call.getObject("config") else {
+            call.reject("Network configuration is required")
+            return
+        }
+        
+        callManager?.setNetworkConfig(config: config) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func getNetworkStatus(_ call: CAPPluginCall) {
+        callManager?.getNetworkStatus { result in
+            switch result {
+            case .success(let status):
+                call.resolve(status)
+            case .failure(let error):
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
+    
+    // MARK: - Security Methods
+    @objc func setSecurityOptions(_ call: CAPPluginCall) {
+        guard let options = call.getObject("options") else {
+            call.reject("Security options are required")
+            return
+        }
+        
+        callManager?.setSecurityOptions(options: options) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    @objc func generateCallToken(_ call: CAPPluginCall) {
+        callManager?.generateCallToken { result in
+            switch result {
+            case .success(let token):
+                call.resolve(["token": token])
+            case .failure(let error):
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
+    
+    @objc func validateCallToken(_ call: CAPPluginCall) {
+        guard let token = call.getString("token") else {
+            call.reject("Token is required")
+            return
+        }
+        
+        callManager?.validateCallToken(token: token) { result in
+            switch result {
+            case .success(let isValid):
+                call.resolve(["valid": isValid])
+            case .failure(let error):
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
+    
+    // MARK: - Analytics Methods
+    @objc func getCallMetrics(_ call: CAPPluginCall) {
+        callManager?.getCallMetrics { result in
+            switch result {
+            case .success(let metrics):
+                call.resolve(metrics)
+            case .failure(let error):
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
+    
+    @objc func exportCallLogs(_ call: CAPPluginCall) {
+        callManager?.exportCallLogs { result in
+            switch result {
+            case .success(let logs):
+                call.resolve(["logs": logs])
+            case .failure(let error):
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
+    
+    // MARK: - Background Mode Methods
+    @objc func setBackgroundMode(_ call: CAPPluginCall) {
+        guard let options = call.getObject("options") else {
+            call.reject("Background options are required")
+            return
+        }
+        
+        callManager?.setBackgroundMode(options: options) { error in
+            if let error = error {
+                call.reject(error.localizedDescription)
+            } else {
+                call.resolve()
+            }
+        }
+    }
+    
+    // MARK: - Event Notifications
+    private func notifyCallQualityChanged(_ stats: [String: Any]) {
+        notifyListeners("callQualityChanged", data: stats)
+    }
+    
+    private func notifyScreenShareStateChanged(isSharing: Bool) {
+        notifyListeners(isSharing ? "screenShareStarted" : "screenShareStopped", data: [:])
+    }
+    
+    private func notifyRecordingStateChanged(_ state: String) {
+        notifyListeners("recordingStateChanged", data: ["state": state])
+    }
+    
+    private func notifyParticipantStateChanged(_ participant: [String: Any], joined: Bool) {
+        notifyListeners(joined ? "participantJoined" : "participantLeft", data: participant)
+    }
+    
+    private func notifyNetworkStatusChanged(_ status: [String: Any]) {
+        notifyListeners("networkStatusChanged", data: status)
+    }
+    
+    private func notifyMetricsUpdated(_ metrics: [String: Any]) {
+        notifyListeners("metricsUpdated", data: metrics)
     }
 }
