@@ -1,0 +1,17 @@
+platform :ios, '13.0'
+
+def capacitor_pods
+  pod 'Capacitor', :path => '../node_modules/@capacitor/ios'
+  pod 'CapacitorCordova', :path => '../node_modules/@capacitor/ios'
+end
+
+target 'Plugin' do
+  use_frameworks!
+  capacitor_pods
+  
+  # WebRTC dependency
+  pod 'GoogleWebRTC'
+  
+  # OneSignal dependency
+  pod 'OneSignal', '~> 3.0'
+end
