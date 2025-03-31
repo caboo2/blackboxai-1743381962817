@@ -1,6 +1,7 @@
 import { WebPlugin } from '@capacitor/core';
 import type {
   VoiceVideoCallPlugin,
+  InitConfig,
   CallOptions,
   CallData,
   CallStats,
@@ -13,10 +14,15 @@ import type {
   SecurityOptions,
   CallMetrics,
   BackgroundOptions,
-  UIOptions
+  UIOptions,
+  SignalType,
+  SignalPayload
 } from './definitions';
+import { CallManager } from './CallManager';
 
 export class VoiceVideoCallWeb extends WebPlugin implements VoiceVideoCallPlugin {
+  private callManager: CallManager | null = null;
+
   constructor() {
     super({
       name: 'VoiceVideoCall',
@@ -24,178 +30,275 @@ export class VoiceVideoCallWeb extends WebPlugin implements VoiceVideoCallPlugin
     });
   }
 
-  // Original methods
+  async initialize(config: InitConfig): Promise<void> {
+    try {
+      this.callManager = new CallManager();
+      await this.callManager.initialize(config);
+    } catch (error) {
+      throw new Error(`Failed to initialize: ${error.message}`);
+    }
+  }
+
   async startCall(options: CallOptions): Promise<void> {
-    console.warn('VoiceVideoCall.startCall is not implemented for web');
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.startCall(options);
   }
 
-  async acceptCall(options: { roomId: string }): Promise<void> {
-    console.warn('VoiceVideoCall.acceptCall is not implemented for web');
-    throw this.unimplemented('Not implemented on web.');
+  async acceptCall(options: { roomId: string; callerId: string }): Promise<void> {
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.acceptCall(options.roomId, options.callerId);
   }
 
-  async rejectCall(options: { roomId: string }): Promise<void> {
-    console.warn('VoiceVideoCall.rejectCall is not implemented for web');
-    throw this.unimplemented('Not implemented on web.');
+  async rejectCall(options: { roomId: string; callerId: string }): Promise<void> {
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.rejectCall(options.roomId, options.callerId);
   }
 
   async endCall(): Promise<void> {
-    console.warn('VoiceVideoCall.endCall is not implemented for web');
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.endCall();
   }
 
   onCallReceived(callback: (data: CallData) => void): void {
-    console.warn('VoiceVideoCall.onCallReceived is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('callReceived', callback);
   }
 
   onCallEnded(callback: () => void): void {
-    console.warn('VoiceVideoCall.onCallEnded is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('callEnded', callback);
   }
 
   // Call Quality and Statistics
   async getCallStats(): Promise<CallStats> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    return this.callManager.getCallStats();
   }
 
   onCallQualityChanged(callback: (stats: CallStats) => void): void {
-    console.warn('VoiceVideoCall.onCallQualityChanged is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('callQualityChanged', callback);
   }
 
   // Screen Sharing
   async startScreenShare(options: ScreenShareOptions): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.startScreenShare(options);
   }
 
   async stopScreenShare(): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.stopScreenShare();
   }
 
   onScreenShareStarted(callback: () => void): void {
-    console.warn('VoiceVideoCall.onScreenShareStarted is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('screenShareStarted', callback);
   }
 
   onScreenShareStopped(callback: () => void): void {
-    console.warn('VoiceVideoCall.onScreenShareStopped is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('screenShareStopped', callback);
   }
 
   // Recording
   async startRecording(options: RecordingOptions): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.startRecording(options);
   }
 
   async stopRecording(): Promise<string> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    return this.callManager.stopRecording();
   }
 
   onRecordingStateChanged(callback: (state: 'started' | 'stopped' | 'failed') => void): void {
-    console.warn('VoiceVideoCall.onRecordingStateChanged is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('recordingStateChanged', callback);
   }
 
-  // Advanced Call Controls
+  // Media Controls
   async muteAudio(): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.muteAudio();
   }
 
   async unmuteAudio(): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.unmuteAudio();
   }
 
   async muteVideo(): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.muteVideo();
   }
 
   async unmuteVideo(): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.unmuteVideo();
   }
 
   async switchCamera(): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.switchCamera();
   }
 
   async setMediaControls(controls: MediaControls): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.setMediaControls(controls);
   }
 
-  // Multi-Party Calls
-  async addParticipant(participantId: string): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
-  }
-
-  async removeParticipant(participantId: string): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
-  }
-
-  async getParticipants(): Promise<Participant[]> {
-    throw this.unimplemented('Not implemented on web.');
-  }
-
-  onParticipantJoined(callback: (participant: Participant) => void): void {
-    console.warn('VoiceVideoCall.onParticipantJoined is not implemented for web');
-  }
-
-  onParticipantLeft(callback: (participantId: string) => void): void {
-    console.warn('VoiceVideoCall.onParticipantLeft is not implemented for web');
-  }
-
-  // Network Handling
+  // Network Methods
   async setNetworkConfig(config: NetworkConfig): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.setNetworkConfig(config);
   }
 
   async getNetworkStatus(): Promise<NetworkStatus> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    return this.callManager.getNetworkStatus();
   }
 
   onNetworkStatusChanged(callback: (status: NetworkStatus) => void): void {
-    console.warn('VoiceVideoCall.onNetworkStatusChanged is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('networkStatusChanged', callback);
   }
 
-  // Security
+  // Security Methods
   async setSecurityOptions(options: SecurityOptions): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.setSecurityOptions(options);
   }
 
   async generateCallToken(): Promise<string> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    return this.callManager.generateCallToken();
   }
 
   async validateCallToken(token: string): Promise<boolean> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    return this.callManager.validateCallToken(token);
   }
 
-  // Analytics
+  // Analytics Methods
   async getCallMetrics(): Promise<CallMetrics> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    return this.callManager.getCallMetrics();
   }
 
   async exportCallLogs(): Promise<string> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    return this.callManager.exportCallLogs();
   }
 
   onMetricsUpdated(callback: (metrics: CallMetrics) => void): void {
-    console.warn('VoiceVideoCall.onMetricsUpdated is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('metricsUpdated', callback);
   }
 
-  // Background Mode
+  // Background Mode Methods
   async setBackgroundMode(options: BackgroundOptions): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.setBackgroundMode(options);
   }
 
   onBackgroundModeChanged(callback: (isBackground: boolean) => void): void {
-    console.warn('VoiceVideoCall.onBackgroundModeChanged is not implemented for web');
+    if (!this.callManager) {
+      console.warn('Plugin not initialized. Call initialize() first.');
+      return;
+    }
+    this.callManager.on('backgroundModeChanged', callback);
   }
 
-  // UI Components
+  // UI Methods
   async showCallUI(options: UIOptions): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.showCallUI(options);
   }
 
   async hideCallUI(): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.hideCallUI();
   }
 
   async customizeCallUI(options: Partial<UIOptions>): Promise<void> {
-    throw this.unimplemented('Not implemented on web.');
+    if (!this.callManager) {
+      throw new Error('Plugin not initialized. Call initialize() first.');
+    }
+    await this.callManager.customizeCallUI(options);
   }
 }
