@@ -1,9 +1,14 @@
 export interface VoiceVideoCallPlugin {
-  // Original methods
-  startCall(options: { roomId: string; callType: 'audio' | 'video' }): Promise<void>;
-  acceptCall(options: { roomId: string }): Promise<void>;
-  rejectCall(options: { roomId: string }): Promise<void>;
+  // Configuration
+  initialize(config: InitConfig): Promise<void>;
+  
+  // Call Methods
+  startCall(options: CallOptions): Promise<void>;
+  acceptCall(options: { roomId: string; callerId: string }): Promise<void>;
+  rejectCall(options: { roomId: string; callerId: string }): Promise<void>;
   endCall(): Promise<void>;
+  
+  // Event Listeners
   onCallReceived(callback: (data: CallData) => void): void;
   onCallEnded(callback: () => void): void;
 
@@ -22,7 +27,7 @@ export interface VoiceVideoCallPlugin {
   stopRecording(): Promise<string>;
   onRecordingStateChanged(callback: (state: RecordingState) => void): void;
 
-  // Advanced Call Controls
+  // Media Controls
   muteAudio(): Promise<void>;
   unmuteAudio(): Promise<void>;
   muteVideo(): Promise<void>;
@@ -30,14 +35,7 @@ export interface VoiceVideoCallPlugin {
   switchCamera(): Promise<void>;
   setMediaControls(controls: MediaControls): Promise<void>;
 
-  // Multi-Party Calls
-  addParticipant(participantId: string): Promise<void>;
-  removeParticipant(participantId: string): Promise<void>;
-  getParticipants(): Promise<Participant[]>;
-  onParticipantJoined(callback: (participant: Participant) => void): void;
-  onParticipantLeft(callback: (participantId: string) => void): void;
-
-  // Network Handling
+  // Network
   setNetworkConfig(config: NetworkConfig): Promise<void>;
   getNetworkStatus(): Promise<NetworkStatus>;
   onNetworkStatusChanged(callback: (status: NetworkStatus) => void): void;
@@ -56,25 +54,53 @@ export interface VoiceVideoCallPlugin {
   setBackgroundMode(options: BackgroundOptions): Promise<void>;
   onBackgroundModeChanged(callback: (isBackground: boolean) => void): void;
 
-  // UI Components
+  // UI
   showCallUI(options: UIOptions): Promise<void>;
   hideCallUI(): Promise<void>;
   customizeCallUI(options: Partial<UIOptions>): Promise<void>;
 }
 
-// Original interfaces
+export interface InitConfig {
+  // EasyRTC Configuration
+  easyrtc: {
+    serverUrl: string;
+    appName?: string;
+    enableDebug?: boolean;
+  };
+  // OneSignal Configuration
+  onesignal: {
+    appId: string;
+    notificationConfig?: {
+      sound?: string;
+      priority?: 'default' | 'high';
+      timeToLive?: number;
+    };
+  };
+}
+
 export interface CallOptions {
   roomId: string;
   callType: 'audio' | 'video';
+  receiverId: string; // OneSignal user ID
+  metadata?: {
+    callerName?: string;
+    callerAvatar?: string;
+    [key: string]: any;
+  };
 }
 
 export interface CallData {
   callerId: string;
   roomId: string;
   callType: 'audio' | 'video';
+  easyrtcSessionId?: string;
+  metadata?: {
+    callerName?: string;
+    callerAvatar?: string;
+    [key: string]: any;
+  };
 }
 
-// New interfaces for enhancements
 export interface CallStats {
   bitrate: number;
   packetLoss: number;
@@ -181,4 +207,20 @@ export interface RTCIceServer {
   urls: string | string[];
   username?: string;
   credential?: string;
+}
+
+export enum SignalType {
+  CALL_OFFER = 'call_offer',
+  CALL_ACCEPT = 'call_accept',
+  CALL_REJECT = 'call_reject',
+  CALL_END = 'call_end'
+}
+
+export interface SignalPayload {
+  type: SignalType;
+  roomId: string;
+  callerId: string;
+  receiverId: string;
+  easyrtcSessionId?: string;
+  metadata?: any;
 }
