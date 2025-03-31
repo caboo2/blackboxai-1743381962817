@@ -1,14 +1,17 @@
 # Capacitor Voice Video Call Plugin
 
-A Capacitor plugin that enables voice and video calling functionality using WebRTC and OneSignal for signaling.
+A Capacitor plugin that enables voice and video calling functionality using WebRTC, with EasyRTC for signaling and OneSignal for offline notifications.
 
 ## Features
 
-- Voice and video calling using WebRTC
-- Call signaling using OneSignal
+- Voice and video calling using WebRTC/EasyRTC
+- Push notifications for offline users via OneSignal
 - Cross-platform support (iOS and Android)
-- Easy-to-use API
-- Comprehensive error handling
+- Screen sharing capabilities
+- Call recording
+- Call quality monitoring
+- Multi-party calls
+- Background mode support
 
 ## Installation
 
@@ -17,138 +20,215 @@ npm install capacitor-voice-video-call
 npx cap sync
 ```
 
-## iOS Setup
+## Configuration
 
-1. Add the following to your Podfile:
-
-```ruby
-pod 'GoogleWebRTC'
-pod 'OneSignal'
-```
-
-2. Run pod install:
-
-```bash
-cd ios && pod install
-```
-
-3. Configure OneSignal in your AppDelegate.swift:
-
-```swift
-import OneSignal
-
-// In didFinishLaunchingWithOptions:
-OneSignal.initWithLaunchOptions(launchOptions)
-OneSignal.setAppId("YOUR-ONESIGNAL-APP-ID")
-```
-
-## Android Setup
-
-1. Add the following to your app's build.gradle:
-
-```gradle
-dependencies {
-    implementation 'org.webrtc:google-webrtc:1.0.32006'
-    implementation 'com.onesignal:OneSignal:[4.0.0, 4.99.99]'
-}
-```
-
-2. Configure OneSignal in your Application class:
-
-```java
-import com.onesignal.OneSignal;
-
-public class MainApplication extends Application {
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        
-        OneSignal.initWithContext(this);
-        OneSignal.setAppId("YOUR-ONESIGNAL-APP-ID");
-    }
-}
-```
-
-## Usage
+### 1. Initialize the Plugin
 
 ```typescript
 import { VoiceVideoCall } from 'capacitor-voice-video-call';
 
-// Start a call
-await VoiceVideoCall.startCall({
-    roomId: 'unique-room-id',
-    callType: 'video' // or 'audio'
-});
-
-// Accept an incoming call
-await VoiceVideoCall.acceptCall({
-    roomId: 'unique-room-id'
-});
-
-// Reject an incoming call
-await VoiceVideoCall.rejectCall({
-    roomId: 'unique-room-id'
-});
-
-// End an ongoing call
-await VoiceVideoCall.endCall();
-
-// Listen for incoming calls
-VoiceVideoCall.onCallReceived((data) => {
-    console.log('Incoming call from:', data.callerId);
-    console.log('Room ID:', data.roomId);
-    console.log('Call type:', data.callType);
-});
-
-// Listen for call end events
-VoiceVideoCall.onCallEnded(() => {
-    console.log('Call ended');
+await VoiceVideoCall.initialize({
+  easyrtc: {
+    serverUrl: 'https://your-easyrtc-server.com',
+    appName: 'your-app',
+    enableDebug: false
+  },
+  onesignal: {
+    appId: 'your-onesignal-app-id',
+    notificationConfig: {
+      sound: 'call_ringtone',
+      priority: 'high',
+      timeToLive: 30
+    }
+  }
 });
 ```
 
-## API Documentation
+### 2. EasyRTC Server Setup
 
-### startCall(options: CallOptions): Promise<void>
-Initiates a call by sending a call invitation via OneSignal and sets up the WebRTC connection.
+1. Set up an EasyRTC server:
+```bash
+npm install easyrtc-server
+```
 
-Parameters:
-- options.roomId: string - Unique identifier for the call room
-- options.callType: 'audio' | 'video' - Type of call to initiate
+2. Basic server configuration:
+```javascript
+const easyrtc = require('easyrtc-server');
+const server = require('http').createServer();
+const io = require('socket.io')(server);
 
-### acceptCall(options: { roomId: string }): Promise<void>
-Accepts an incoming call and establishes the WebRTC connection.
+easyrtc.listen(server, io);
+server.listen(8080);
+```
 
-Parameters:
-- options.roomId: string - Room ID of the call to accept
+### 3. OneSignal Setup
 
-### rejectCall(options: { roomId: string }): Promise<void>
-Rejects an incoming call.
+1. Create a OneSignal account and app
+2. Configure your iOS/Android apps with OneSignal
+3. Add the required platform configurations
 
-Parameters:
-- options.roomId: string - Room ID of the call to reject
+## Usage
 
-### endCall(): Promise<void>
-Terminates the ongoing call and sends a call termination message via OneSignal.
+### Making a Call
 
-### onCallReceived(callback: (data: CallData) => void): void
-Listens for incoming call invitations.
+```typescript
+// Start a call
+await VoiceVideoCall.startCall({
+  roomId: 'unique-room-id',
+  callType: 'video',
+  receiverId: 'recipient-onesignal-id',
+  metadata: {
+    callerName: 'John Doe',
+    callerAvatar: 'https://example.com/avatar.jpg'
+  }
+});
 
-Callback parameters:
-- data.callerId: string - ID of the caller
-- data.roomId: string - Room ID for the call
-- data.callType: 'audio' | 'video' - Type of incoming call
+// Listen for call events
+VoiceVideoCall.onCallReceived((callData) => {
+  console.log('Incoming call from:', callData.callerId);
+});
 
-### onCallEnded(callback: () => void): void
-Listens for call termination events.
+// Accept a call
+await VoiceVideoCall.acceptCall({
+  roomId: 'unique-room-id',
+  callerId: 'caller-id'
+});
+
+// End a call
+await VoiceVideoCall.endCall();
+```
+
+### Screen Sharing
+
+```typescript
+// Start screen sharing
+await VoiceVideoCall.startScreenShare({
+  audio: true,
+  systemAudio: false
+});
+
+// Stop screen sharing
+await VoiceVideoCall.stopScreenShare();
+```
+
+### Recording
+
+```typescript
+// Start recording
+await VoiceVideoCall.startRecording({
+  type: 'both',
+  quality: 'high',
+  storage: 'local'
+});
+
+// Stop recording
+const recordingPath = await VoiceVideoCall.stopRecording();
+```
+
+### Call Controls
+
+```typescript
+// Mute/unmute
+await VoiceVideoCall.muteAudio();
+await VoiceVideoCall.unmuteAudio();
+await VoiceVideoCall.muteVideo();
+await VoiceVideoCall.unmuteVideo();
+
+// Switch camera
+await VoiceVideoCall.switchCamera();
+
+// Set media controls
+await VoiceVideoCall.setMediaControls({
+  enableNoiseSupression: true,
+  enableEchoCancellation: true,
+  enableAutoGainControl: true,
+  videoQuality: 'high'
+});
+```
+
+## How It Works
+
+### Call Flow
+
+1. **Online Users**:
+   - Direct connection through EasyRTC
+   - WebRTC peer connection established
+   - Real-time media streaming
+
+2. **Offline Users**:
+   - OneSignal push notification sent
+   - User opens app from notification
+   - Automatically connects to EasyRTC session
+   - WebRTC connection established
+
+### Integration Points
+
+1. **EasyRTC Handles**:
+   - WebRTC signaling
+   - Peer connections
+   - Media streams
+   - Room management
+   - Call state
+
+2. **OneSignal Handles**:
+   - Offline notifications
+   - Background state
+   - Call notifications
+   - Missed calls
+
+### State Management
+
+```typescript
+// Call States
+enum CallState {
+  IDLE,
+  RINGING,
+  CONNECTING,
+  CONNECTED,
+  DISCONNECTED
+}
+
+// Notification Types
+enum NotificationType {
+  INCOMING_CALL,
+  MISSED_CALL,
+  CALL_ENDED
+}
+```
 
 ## Error Handling
 
-The plugin includes comprehensive error handling. All methods return promises that may reject with detailed error messages. Common error scenarios include:
+The plugin includes comprehensive error handling for various scenarios:
 
-- Invalid or missing parameters
-- Network connectivity issues
-- WebRTC initialization failures
-- OneSignal communication errors
+```typescript
+try {
+  await VoiceVideoCall.startCall({
+    roomId: 'room-id',
+    callType: 'video',
+    receiverId: 'user-id'
+  });
+} catch (error) {
+  if (error.code === 'permission_denied') {
+    // Handle permission error
+  } else if (error.code === 'network_error') {
+    // Handle network error
+  }
+}
+```
+
+## Background Mode
+
+The plugin handles calls in background mode:
+
+1. **Android**:
+   - Foreground service with notification
+   - Audio-only mode in background
+   - Wake lock management
+
+2. **iOS**:
+   - VoIP push notifications
+   - Background audio session
+   - CallKit integration
 
 ## Contributing
 
